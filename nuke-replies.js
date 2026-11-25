@@ -1,73 +1,75 @@
-// Default limit of 312 matches Twitter/X's typical per-session reply page load capacity.
 async function bulkDeleteTwitterReplies(handle, limit = 312) {
     if (!handle) {
-        console.error("Please provide your Twitter handle, e.g. bulkDeleteTwitterReplies('@YourHandle')");
+        console.error("Please provide your Twitter handle.");
         return;
     }
 
-    // Normalize handle: ensure it starts with '@'
     const normalizedHandle = handle.startsWith('@') ? handle : '@' + handle;
-
     let deletedCount = 0;
 
     for (let i = 0; i < limit; i++) {
-        // 1. Find the next reply by your handle
-        const findTarget = () => Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
+        const findTarget = () => Array.from(document.querySelectorAll('article'))
             .find(article => article.innerText.includes(normalizedHandle));
 
         let target = findTarget();
 
-        // 2. Scroll if not found
         if (!target) {
             window.scrollBy(0, 1000);
             await new Promise(r => setTimeout(r, 2000));
             target = findTarget();
-            if (!target) {
-                console.log("No more replies found. Try scrolling down manually.");
-                break;
-            }
+            if (!target) break;
         }
 
         try {
-            // 3. Open the "More" menu
             target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            const caret = target.querySelector('[data-testid="caret"]');
-            if (!caret) continue;
-            caret.click();
+            await new Promise(r => setTimeout(r, 500));
 
-            await new Promise(r => setTimeout(r, 600));
+            // 1. Open "More" menu
+            const moreBtn = target.querySelector('[aria-label="Więcej"], [aria-label="More"]');
+            if (!moreBtn) continue;
+            moreBtn.click();
+            await new Promise(r => setTimeout(r, 800));
 
-            // 4. Find and click "Delete" (Supports English and Polish)
-            const menuItems = Array.from(document.querySelectorAll('[role="menuitem"]'));
-            const deleteBtn = menuItems.find(el =>
-                el.innerText.includes('Delete') || el.innerText.includes('Usuń')
+            // 2. Click "Delete" in the menu
+            const menuItems = Array.from(document.querySelectorAll('[role="menuitem"], div'));
+            const deleteMenuBtn = menuItems.find(el => 
+                (el.innerText === 'Delete' || el.innerText === 'Usuń') && 
+                el.offsetParent !== null
             );
 
-            if (deleteBtn) {
-                deleteBtn.click();
-                await new Promise(r => setTimeout(r, 600));
+            if (deleteMenuBtn) {
+                deleteMenuBtn.click();
+                await new Promise(r => setTimeout(r, 1000));
 
-                // 5. Confirm deletion
-                const confirm = document.querySelector('[data-testid="confirmationSheetConfirm"]');
-                if (confirm) {
-                    confirm.click();
+                // 3. Find and click "Delete" in the confirmation popup
+                // We look for a visible button that is NOT inside an article
+                const allButtons = Array.from(document.querySelectorAll('button, [role="button"]'));
+                const confirmBtn = allButtons.find(b => {
+                    const isVisible = b.offsetParent !== null;
+                    const isDeleteText = b.innerText === 'Delete' || b.innerText === 'Usuń';
+                    const notInArticle = !b.closest('article');
+                    return isVisible && isDeleteText && notInArticle;
+                });
+
+                if (confirmBtn) {
+                    confirmBtn.click();
                     deletedCount++;
                     console.log(`Deleted: ${deletedCount}/${limit}`);
-                    // Wait for the UI to settle
-                    await new Promise(r => setTimeout(r, 1500));
+                    // Longer wait for the tweet to actually disappear from DOM
+                    await new Promise(r => setTimeout(r, 2500));
+                } else {
+                    console.log("Confirmation button not found, closing popup...");
+                    document.body.click(); 
                 }
             } else {
-                // Click away if delete not found to close the menu
                 document.body.click();
-                await new Promise(r => setTimeout(r, 500));
             }
         } catch (err) {
-            console.error("Batch error, skipping to next...", err);
+            console.error("Error in batch, skipping...", err);
             await new Promise(r => setTimeout(r, 1000));
         }
     }
     console.log(`Finished! Total deleted: ${deletedCount}`);
 }
 
-// Execute the function — replace '@YourHandle' with your own Twitter/X handle
-bulkDeleteTwitterReplies('@YourHandle');
+bulkDeleteTwitterReplies('@Xtrems876');
